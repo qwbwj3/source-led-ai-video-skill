@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "project_name": "请替换项目名",
+  "platform": "douyin",
+  "commercial": true,
+  "review_scope": {
+    "industries": []
+  },
+  "canvas": {
+    "width": 1080,
+    "height": 1920,
+    "fps": 30
+  },
+  "paths": {
+    "base_video": "source/clean-base.mp4",
+    "bgm": "source/bgm.wav"
+  },
+  "narration": {
+    "language": "Chinese",
+    "caption_lead_ms": 80,
+    "scenes": [
+      {
+        "id": "scene-01",
+        "text": "把第一段口播写在这里。",
+        "captions": [
+          "把第一段口播写在这里。"
+        ]
+      },
+      {
+        "id": "scene-02",
+        "text": "把第二段口播写在这里。",
+        "captions": [
+          {
+            "text": "把第二段口播写在这里。",
+            "show": true
+          }
+        ]
+      }
+    ]
+  },
+  "source_timeline": {
+    "scene_boundaries_seconds": [
+      0.0,
+      5.0,
+      10.0
+    ],
+    "retime_ratio_limits": [
+      0.8,
+      1.2
+    ]
+  },
+  "caption_style": {
+    "font_size": 68,
+    "margin_v": 470,
+    "max_line_units": 14
+  },
+  "audio": {
+    "final_lufs": -14,
+    "bgm_fade_out_seconds": 1.8
+  },
+  "cover": {
+    "hook": "一句话做出成品",
+    "headline_lines": [
+      "一句话",
+      "做出成品"
+    ],
+    "text_mode": "imagegen",
+    "allow_people": false,
+    "visual_brief": "无真人封面。用具体结果做主视觉，让 ImageGen 把审核通过的钩子直接做成结论式大字、高光关键词和完整光影；不出现额外文字、外部平台标识、网址、水印或无关装饰。",
+    "3x4": {
+      "generated_source": "covers/source/cover-3x4-imagegen.png",
+      "final": "covers/封面-3x4-一句话做出成品.png"
+    },
+    "4x3": {
+      "generated_source": "covers/source/cover-4x3-imagegen.png",
+      "final": "covers/封面-4x3-一句话做出成品.png"
+    }
+  },
+  "qa": {
+    "max_duration_seconds": 90,
+    "allow_black": false,
+    "allow_silence": false
+  }
+}

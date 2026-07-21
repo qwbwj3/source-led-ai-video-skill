@@ -1,0 +1,4 @@
+interface:
+  display_name: "外网 AI 素材短视频流水线"
+  short_description: "审核后生成火山女声、双版封面、字幕、混音与可审片成片"
+  default_prompt: "使用 $source-led-ai-video 把给定的 X 帖子、Builder 演示、开源项目或本地素材制作成抖音待上传短视频；先完成 yuwen 文案审核，再生成两版 imagegen 封面和火山女声，最后交付 QA 通过的本地文件。"
