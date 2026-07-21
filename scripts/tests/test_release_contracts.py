@@ -214,6 +214,26 @@ class ProjectFixture(unittest.TestCase):
             approval,
         )
         video_hash = common.sha256_file(run_dir / "video.mp4")
+        evidence = run_dir / "qa/evidence-frames/frame-000000.jpg"
+        evidence.parent.mkdir(parents=True, exist_ok=True)
+        evidence.write_bytes(b"offline full-resolution evidence frame")
+        _write_json(
+            run_dir / "qa/review-points.json",
+            {
+                "schema": 1,
+                "video_sha256": video_hash,
+                "points": [
+                    {
+                        "id": "opening",
+                        "label": "开场完整画面",
+                        "frame": 0,
+                        "time_seconds": 0.0,
+                        "path": "qa/evidence-frames/frame-000000.jpg",
+                        "sha256": common.sha256_file(evidence),
+                    }
+                ],
+            },
+        )
         _write_json(
             run_dir / "qa/auto-qa.json",
             {"schema": 1, "passed": True, "video_sha256": video_hash},
@@ -224,6 +244,13 @@ class ProjectFixture(unittest.TestCase):
                 "schema": 1,
                 "build_key": build_key,
                 "config_sha256": workflow.config_sha256(self.config),
+                "inputs": {
+                    "base_sha256": common.sha256_file(
+                        self.project_root / self.base_relative
+                    ),
+                    "bgm_sha256": None,
+                    "source_assets": {},
+                },
             },
         )
         workflow.write_build_manifest(
@@ -234,6 +261,28 @@ class ProjectFixture(unittest.TestCase):
         )
         return run_dir
 
+    def create_rights_ledger(self) -> None:
+        evidence = self.project_root / "private/rights-evidence/base.txt"
+        evidence.parent.mkdir(parents=True, exist_ok=True)
+        evidence.write_text("offline rights evidence\n", encoding="utf-8")
+        record = {
+            "schema": 1,
+            "event": "rights_confirmed",
+            "asset_sha256": common.sha256_file(
+                self.project_root / self.base_relative
+            ),
+            "platforms": ["douyin"],
+            "commercial": True,
+            "expires_at": None,
+            "rights_basis": "owned fixture media",
+            "evidence_path": "private/rights-evidence/base.txt",
+            "evidence_sha256": common.sha256_file(evidence),
+            "confirmed_by": "offline contract reviewer",
+        }
+        ledger = self.project_root / "private/rights-events.jsonl"
+        ledger.parent.mkdir(parents=True, exist_ok=True)
+        ledger.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
     def assert_workflow_error(self, expected_code: str, callable_: object) -> None:
         with self.assertRaises(common.WorkflowError) as raised:
             callable_()
@@ -241,6 +290,27 @@ class ProjectFixture(unittest.TestCase):
 
 
 class ReviewGateContractTests(ProjectFixture):
+    def test_packaged_approval_accepts_project_v2_contract(self) -> None:
+        packaged = copy.deepcopy(self.config)
+        packaged["version"] = 2
+        self.write_config(packaged)
+        expected = {"schema": 2, "result": "pass"}
+        with (
+            mock.patch.object(review_gate, "validate_scope_sentinel") as scope,
+            mock.patch.object(
+                review_gate,
+                "_verify_approval_for_config",
+                return_value=expected,
+            ) as verify,
+        ):
+            self.assertEqual(
+                expected,
+                review_gate.verify_packaged_approval(self.config_path),
+            )
+
+        scope.assert_called_once_with(packaged)
+        verify.assert_called_once_with(packaged, self.project_root.resolve())
+
     def test_missing_approval_blocks_build_before_tts(self) -> None:
         with mock.patch.object(workflow, "synthesize") as synthesize:
             self.assert_workflow_error(
@@ -554,6 +624,59 @@ class ReviewGateContractTests(ProjectFixture):
             ),
         )
 
+    def test_lexical_scan_covers_narration_and_cover_hook_with_source_labels(self) -> None:
+        candidate = copy.deepcopy(self.config)
+        narration = "这个演示号称全网第一，仍然需要结合证据判断。"
+        candidate["narration"]["scenes"][0].update(
+            {"text": narration, "captions": [narration]}
+        )
+        candidate["cover"]["hook"] = "全网第一成片"
+        self.write_config(candidate)
+
+        review_gate.prepare(self.config_path)
+        scan = review_gate.scan(self.config_path)
+
+        matched_sources = {
+            hit["source"]
+            for hit in scan["candidates"]
+            if "全网第一" in hit["match"]
+        }
+        self.assertEqual({"narration", "cover_hook"}, matched_sources)
+        self.assertEqual(["narration", "cover_hook"], scan["scanned_sources"])
+        self.assertEqual(len("全网第一成片"), scan["cover_hook_characters"])
+        for collection in review_gate.LEXICAL_HIT_COLLECTIONS:
+            for hit in scan[collection]:
+                self.assertIn(hit["source"], {"narration", "cover_hook"})
+
+        legacy_narration_scan = precheck_scan.scan(
+            narration + "\n",
+            commercial=True,
+            industries=set(),
+            radius=24,
+        )
+        self.assertEqual(legacy_narration_scan["text_sha256"], scan["text_sha256"])
+        self.assertEqual(legacy_narration_scan["characters"], scan["characters"])
+
+    def test_cover_hook_hit_is_hash_bound_to_approval_evidence(self) -> None:
+        candidate = copy.deepcopy(self.config)
+        candidate["cover"]["hook"] = "全网第一成片"
+        self.write_config(candidate)
+        self.approve_current_narration()
+
+        scan_path = self.project_root / "review/lexical-scan.json"
+        lexical_scan = common.read_json(scan_path)
+        lexical_scan["candidates"] = [
+            hit
+            for hit in lexical_scan["candidates"]
+            if hit.get("source") != "cover_hook"
+        ]
+        _write_json(scan_path, lexical_scan)
+
+        self.assert_workflow_error(
+            "REVIEW_SCAN_STALE",
+            lambda: review_gate.verify_approval(self.config_path),
+        )
+
     def test_policy_fingerprint_change_invalidates_existing_approval(self) -> None:
         self.approve_current_narration()
         with mock.patch.object(review_gate, "policy_sha256", return_value="0" * 64):
@@ -668,6 +791,43 @@ class CoverContractTests(ProjectFixture):
 
 
 class ReleaseIntegrityContractTests(ProjectFixture):
+    def test_packaged_v2_config_rejects_external_contract_paths(self) -> None:
+        packaged = copy.deepcopy(self.config)
+        packaged["version"] = 2
+        packaged["source_package"] = {"manifest": "source-package/manifest.json"}
+        packaged["edit"] = {
+            "plan": "edit/edit-plan.json",
+            "timeline_lock": "edit/timeline.lock.json",
+        }
+        packaged["cover"]["prompt_record"] = "covers/cover-prompt.json"
+        packaged["narration"]["scenes"][0].update(
+            {
+                "purpose": "结果钩子",
+                "claim_ids": ["claim-01"],
+                "asset_ids": ["asset-01"],
+                "caption_region": "bottom",
+            }
+        )
+        for relative in (
+            "source-package/manifest.json",
+            "edit/edit-plan.json",
+            "edit/timeline.lock.json",
+            "covers/cover-prompt.json",
+        ):
+            _write_json(self.project_root / relative, {})
+        workflow.validate_packaged_config(self.project_root, packaged)
+
+        for escaped in ("../outside.json", "/private/tmp/outside.json"):
+            with self.subTest(path=escaped):
+                invalid = copy.deepcopy(packaged)
+                invalid["source_package"]["manifest"] = escaped
+                self.assert_workflow_error(
+                    "BUNDLE_CONFIG",
+                    lambda invalid=invalid: workflow.validate_packaged_config(
+                        self.project_root, invalid
+                    ),
+                )
+
     def test_non_object_manifest_fails_with_structured_error(self) -> None:
         run_dir = self.project_root / "review-runs" / ("d" * 20)
         run_dir.mkdir(parents=True)
@@ -717,6 +877,8 @@ class ReleaseIntegrityContractTests(ProjectFixture):
             "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
             "pass",
             [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
         )
 
         self.assert_workflow_error(
@@ -780,6 +942,7 @@ class ReleaseIntegrityContractTests(ProjectFixture):
     def test_confirmed_rights_allow_finalize(self) -> None:
         approval = self.approve_current_narration(material_rights="已确认")
         self.assertEqual(review_gate.RIGHTS_CONFIRMED, approval["rights_clearance"])
+        self.create_rights_ledger()
         run_dir = self.create_integrity_run("f" * 20)
         workflow.confirm_visual(
             self.config_path,
@@ -788,13 +951,407 @@ class ReleaseIntegrityContractTests(ProjectFixture):
             "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
             "pass",
             [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
         )
 
         latest = workflow.finalize(self.config_path, run_dir)
         final_dir = self.project_root / latest["bundle"]
         self.assertTrue(final_dir.is_dir())
-        self.assertFalse(run_dir.exists())
+        self.assertTrue(run_dir.exists())
         self.assertEqual("f" * 20, latest["build_key"])
+        self.assertEqual(latest, workflow.finalize(self.config_path, run_dir))
+
+    def test_new_rights_ledger_creates_new_immutable_release(self) -> None:
+        self.approve_current_narration(material_rights="已确认")
+        self.create_rights_ledger()
+        run_dir = self.create_integrity_run("6" * 20)
+        workflow.confirm_visual(
+            self.config_path,
+            run_dir,
+            "离线合约审核",
+            "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
+            "pass",
+            [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
+        )
+        first = workflow.finalize(self.config_path, run_dir)
+        ledger = self.project_root / "private/rights-events.jsonl"
+        renewed_evidence = self.project_root / "private/rights-evidence/base-renewed.txt"
+        renewed_evidence.write_text("renewed rights evidence\n", encoding="utf-8")
+        renewed = json.loads(ledger.read_text(encoding="utf-8"))
+        renewed["rights_basis"] = "renewed owned fixture media"
+        renewed["evidence_path"] = "private/rights-evidence/base-renewed.txt"
+        renewed["evidence_sha256"] = common.sha256_file(renewed_evidence)
+        ledger.write_text(
+            ledger.read_text(encoding="utf-8") + json.dumps(renewed) + "\n",
+            encoding="utf-8",
+        )
+        second = workflow.finalize(self.config_path, run_dir)
+        self.assertEqual(first["build_key"], second["build_key"])
+        self.assertNotEqual(first["release_key"], second["release_key"])
+        self.assertNotEqual(first["bundle"], second["bundle"])
+        self.assertTrue((self.project_root / first["bundle"]).is_dir())
+        self.assertTrue((self.project_root / second["bundle"]).is_dir())
+
+    def test_finalize_revalidates_staging_after_copy(self) -> None:
+        self.approve_current_narration(material_rights="已确认")
+        self.create_rights_ledger()
+        run_dir = self.create_integrity_run("7" * 20)
+        workflow.confirm_visual(
+            self.config_path,
+            run_dir,
+            "离线合约审核",
+            "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
+            "pass",
+            [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
+        )
+        original_copy = workflow.copy_rights_evidence
+
+        def corrupt_after_copy(project_root: Path, staging: Path, rights: dict) -> None:
+            original_copy(project_root, staging, rights)
+            (staging / "private/rights-events.jsonl").write_text(
+                '{"schema":1,"event":"unknown"}\n', encoding="utf-8"
+            )
+
+        with mock.patch.object(
+            workflow, "copy_rights_evidence", side_effect=corrupt_after_copy
+        ):
+            self.assert_workflow_error(
+                "FINALIZE_RIGHTS_RACE",
+                lambda: workflow.finalize(self.config_path, run_dir),
+            )
+        deliverables = self.project_root / "deliverables"
+        self.assertFalse((deliverables / "latest.json").exists())
+        self.assertEqual([], list(deliverables.iterdir()))
+
+    def test_release_key_is_derived_from_the_copied_rights_snapshot(self) -> None:
+        self.approve_current_narration(material_rights="已确认")
+        self.create_rights_ledger()
+        run_dir = self.create_integrity_run("9" * 20)
+        workflow.confirm_visual(
+            self.config_path,
+            run_dir,
+            "离线合约审核",
+            "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
+            "pass",
+            [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
+        )
+        original_copy = workflow.copy_rights_evidence
+
+        def append_live_after_snapshot(
+            project_root: Path, staging: Path, rights: dict
+        ) -> None:
+            original_copy(project_root, staging, rights)
+            ledger = project_root / "private/rights-events.jsonl"
+            extra = json.loads(ledger.read_text(encoding="utf-8").splitlines()[0])
+            extra["rights_basis"] = "new live confirmation after copied snapshot"
+            ledger.write_text(
+                ledger.read_text(encoding="utf-8") + json.dumps(extra) + "\n",
+                encoding="utf-8",
+            )
+
+        with mock.patch.object(
+            workflow, "copy_rights_evidence", side_effect=append_live_after_snapshot
+        ):
+            latest = workflow.finalize(self.config_path, run_dir)
+
+        bundle = self.project_root / latest["bundle"]
+        bundled_ledger_hash = common.sha256_file(
+            bundle / "private/rights-events.jsonl"
+        )
+        self.assertEqual(
+            workflow.release_key_for(run_dir.name, bundled_ledger_hash),
+            latest["release_key"],
+        )
+        self.assertNotEqual(
+            bundled_ledger_hash,
+            common.sha256_file(self.project_root / "private/rights-events.jsonl"),
+        )
+        self.assertEqual([], workflow.verify_bundle_contracts(bundle)["failures"])
+
+    def test_corrupt_existing_release_is_quarantined_and_rebuilt(self) -> None:
+        self.approve_current_narration(material_rights="已确认")
+        self.create_rights_ledger()
+        run_dir = self.create_integrity_run("a" * 20)
+        workflow.confirm_visual(
+            self.config_path,
+            run_dir,
+            "离线合约审核",
+            "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
+            "pass",
+            [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
+        )
+        first = workflow.finalize(self.config_path, run_dir)
+        final_dir = self.project_root / first["bundle"]
+        video = final_dir / "video.mp4"
+        os.chmod(video, 0o600)
+        video.write_bytes(b"corrupt published bytes")
+
+        rebuilt = workflow.finalize(self.config_path, run_dir)
+        self.assertEqual(first["release_key"], rebuilt["release_key"])
+        rebuilt_dir = self.project_root / rebuilt["bundle"]
+        self.assertEqual(
+            common.sha256_file(run_dir / "video.mp4"),
+            common.sha256_file(rebuilt_dir / "video.mp4"),
+        )
+        self.assertTrue(
+            any(
+                path.is_dir() and ".quarantine-" in path.name
+                for path in (self.project_root / "deliverables").iterdir()
+            )
+        )
+        self.assertEqual([], workflow.verify_bundle_contracts(rebuilt_dir)["failures"])
+
+    def test_revoked_live_rights_make_latest_stale_in_status(self) -> None:
+        self.approve_current_narration(material_rights="已确认")
+        self.create_rights_ledger()
+        run_dir = self.create_integrity_run("b" * 20)
+        workflow.confirm_visual(
+            self.config_path,
+            run_dir,
+            "离线合约审核",
+            "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
+            "pass",
+            [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
+        )
+        workflow.finalize(self.config_path, run_dir)
+        ledger = self.project_root / "private/rights-events.jsonl"
+        current = json.loads(ledger.read_text(encoding="utf-8").splitlines()[0])
+        revoked = {
+            "schema": 1,
+            "event": "rights_revoked",
+            "asset_sha256": current["asset_sha256"],
+            "revoked_at": "2026-07-21T14:00:00Z",
+            "reason": "permission withdrawn",
+            "confirmed_by": "offline contract reviewer",
+        }
+        ledger.write_text(
+            ledger.read_text(encoding="utf-8") + json.dumps(revoked) + "\n",
+            encoding="utf-8",
+        )
+
+        status = workflow.workflow_status(self.config_path)
+        self.assertEqual("RIGHTS_SCOPE", status["rights_status"])
+        self.assertEqual("rights_not_ready", status["latest_status"])
+        self.assertEqual(
+            "record active Douyin commercial rights and evidence",
+            status["next_action"],
+        )
+
+    def test_status_does_not_treat_a_stale_run_or_release_as_current(self) -> None:
+        self.approve_current_narration(material_rights="已确认")
+        self.create_rights_ledger()
+        run_dir = self.create_integrity_run("c" * 20)
+        workflow.confirm_visual(
+            self.config_path,
+            run_dir,
+            "离线合约审核",
+            "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
+            "pass",
+            [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
+        )
+        workflow.finalize(self.config_path, run_dir)
+
+        changed = copy.deepcopy(self.config)
+        changed["narration"]["scenes"][0]["text"] = "当前文案已修改，旧成片不能继续使用。"
+        changed["narration"]["scenes"][0]["captions"] = [
+            "当前文案已修改，旧成片不能继续使用。"
+        ]
+        self.write_config(changed)
+
+        status = workflow.workflow_status(self.config_path)
+        self.assertIsNone(status["active_review_run"])
+        self.assertEqual("superseded_build", status["latest_status"])
+        self.assertIn("valid publish approval", status["next_action"])
+        self.assertNotIn("verify the latest", status["next_action"])
+        self.assertNotIn("finalize", status["next_action"])
+
+    def test_finalize_quarantines_failed_post_publish_verification(self) -> None:
+        self.approve_current_narration(material_rights="已确认")
+        self.create_rights_ledger()
+        run_dir = self.create_integrity_run("8" * 20)
+        workflow.confirm_visual(
+            self.config_path,
+            run_dir,
+            "离线合约审核",
+            "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
+            "pass",
+            [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
+        )
+        original_verify = workflow.verify_bundle_contracts
+
+        def fail_only_after_publish(bundle: Path, **kwargs) -> dict:
+            result = original_verify(bundle, **kwargs)
+            if not bundle.name.startswith("."):
+                result = dict(result)
+                result["failures"] = list(result["failures"]) + [
+                    "simulated post-publish mutation"
+                ]
+            return result
+
+        with mock.patch.object(
+            workflow,
+            "verify_bundle_contracts",
+            side_effect=fail_only_after_publish,
+        ):
+            self.assert_workflow_error(
+                "FINALIZE_PUBLISHED",
+                lambda: workflow.finalize(self.config_path, run_dir),
+            )
+
+        deliverables = self.project_root / "deliverables"
+        self.assertFalse((deliverables / "latest.json").exists())
+        self.assertFalse(
+            any(path.is_dir() and not path.name.startswith(".") for path in deliverables.iterdir())
+        )
+        self.assertTrue(
+            any(
+                path.is_dir() and ".quarantine-" in path.name
+                for path in deliverables.iterdir()
+            )
+        )
+
+    def test_finalize_permission_failure_is_structured_and_cleans_staging(self) -> None:
+        self.approve_current_narration(material_rights="已确认")
+        self.create_rights_ledger()
+        run_dir = self.create_integrity_run("d" * 20)
+        workflow.confirm_visual(
+            self.config_path,
+            run_dir,
+            "离线合约审核",
+            "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
+            "pass",
+            [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
+        )
+        with mock.patch.object(
+            workflow.os, "chmod", side_effect=OSError("simulated chmod failure")
+        ):
+            self.assert_workflow_error(
+                "FINALIZE_PERMISSIONS",
+                lambda: workflow.finalize(self.config_path, run_dir),
+            )
+        self.assertEqual(
+            [], list((self.project_root / "deliverables").iterdir())
+        )
+
+    def test_finalize_copies_evidence_for_revoked_confirmation_history(self) -> None:
+        self.approve_current_narration(material_rights="已确认")
+        self.create_rights_ledger()
+        ledger = self.project_root / "private/rights-events.jsonl"
+        current = json.loads(ledger.read_text(encoding="utf-8"))
+        old_evidence = self.project_root / "private/rights-evidence/old-base.txt"
+        old_evidence.write_text("older permission evidence\n", encoding="utf-8")
+        old = dict(current)
+        old["evidence_path"] = "private/rights-evidence/old-base.txt"
+        old["evidence_sha256"] = common.sha256_file(old_evidence)
+        revoked = {
+            "schema": 1,
+            "event": "rights_revoked",
+            "asset_sha256": current["asset_sha256"],
+            "revoked_at": "2026-07-21T09:00:00Z",
+            "reason": "旧授权撤回后重新确认",
+            "confirmed_by": "offline contract reviewer",
+        }
+        ledger.write_text(
+            "\n".join(json.dumps(item) for item in (old, revoked, current)) + "\n",
+            encoding="utf-8",
+        )
+
+        run_dir = self.create_integrity_run("1" * 20)
+        workflow.confirm_visual(
+            self.config_path,
+            run_dir,
+            "离线合约审核",
+            "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
+            "pass",
+            [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
+        )
+        latest = workflow.finalize(self.config_path, run_dir)
+        bundle = self.project_root / latest["bundle"]
+        self.assertTrue((bundle / "private/rights-evidence/old-base.txt").is_file())
+        self.assertTrue((bundle / "private/rights-evidence/base.txt").is_file())
+        verified = workflow.verify_rights_ledger(
+            bundle,
+            None,
+            required_asset_hashes={current["asset_sha256"]: "base_video"},
+            require_schema2=False,
+        )
+        self.assertEqual(1, len(verified["records"]))
+
+    def test_schema2_visual_record_cannot_finalize_after_v12(self) -> None:
+        self.approve_current_narration(material_rights="已确认")
+        run_dir = self.create_integrity_run("9" * 20)
+        manifest = common.read_json(run_dir / "build-manifest.json")
+        record = {
+            "schema": 2,
+            "result": "pass",
+            "reviewer": "旧版审核记录",
+            "notes": "旧版记录没有完整听审时长和真实证据帧绑定。",
+            "failed_checks": [],
+            "checks": {name: True for name in workflow.VISUAL_CHECKS},
+            "build_manifest_sha256": common.sha256_file(
+                run_dir / "build-manifest.json"
+            ),
+            "video_sha256": manifest["artifacts"]["video.mp4"],
+            "contact_sheet_sha256": manifest["artifacts"]["qa/contact-sheet.jpg"],
+            "cover_3x4_sha256": manifest["artifacts"]["covers/cover-3x4.png"],
+            "cover_4x3_sha256": manifest["artifacts"]["covers/cover-4x3.png"],
+        }
+        _write_json(run_dir / "qa/visual-review.json", record)
+        self.assert_workflow_error(
+            "VISUAL_REVIEW_STALE",
+            lambda: workflow.finalize(self.config_path, run_dir),
+        )
+
+    def test_pass_requires_full_listen_and_every_generated_review_point(self) -> None:
+        self.approve_current_narration(material_rights="已确认")
+        run_dir = self.create_integrity_run("8" * 20)
+        self.assert_workflow_error(
+            "VISUAL_INCOMPLETE_LISTEN",
+            lambda: workflow.confirm_visual(
+                self.config_path,
+                run_dir,
+                "离线合约审核",
+                "已检查证据帧但尚未完成整条视频的听审。",
+                "pass",
+                [],
+                listened_seconds=2.0,
+                evidence_frames=[
+                    {"time_seconds": 0.0, "label": "已检查开场证据帧"}
+                ],
+            ),
+        )
+        self.assert_workflow_error(
+            "VISUAL_EVIDENCE_REQUIRED",
+            lambda: workflow.confirm_visual(
+                self.config_path,
+                run_dir,
+                "离线合约审核",
+                "已听完整条视频，但没有提交必须检查的证据帧。",
+                "pass",
+                [],
+                listened_seconds=3.0,
+                evidence_frames=[],
+            ),
+        )
 
     def test_auto_qa_or_manifest_change_invalidates_visual_approval(self) -> None:
         self.approve_current_narration(material_rights="已确认")
@@ -807,6 +1364,8 @@ class ReleaseIntegrityContractTests(ProjectFixture):
             "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
             "pass",
             [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
         )
         auto_path = auto_changed_run / "qa/auto-qa.json"
         auto = common.read_json(auto_path)
@@ -825,6 +1384,8 @@ class ReleaseIntegrityContractTests(ProjectFixture):
             "完整检查封面、字幕、场景边界、信息卡和声音后记录视觉通过。",
             "pass",
             [],
+            listened_seconds=3.0,
+            evidence_frames=[{"time_seconds": 0.0, "label": "已检查开场证据帧"}],
         )
         manifest_path = manifest_changed_run / "build-manifest.json"
         manifest = common.read_json(manifest_path)

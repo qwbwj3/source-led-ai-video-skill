@@ -17,6 +17,9 @@
 - Collect the original post, relevant replies, author explanation, linked project page, and original video into private evidence. Use Chrome with the user's logged-in state when X access is needed; do not default to a headless browser.
 - Verify ordinary factual claims. Do not deploy an open-source project merely to prove it works unless the user explicitly asks. Take the toolchain from the author's text first, then reliable linked material, then clearly marked inference.
 - Preserve rights evidence. Attribution does not create permission. Material with pending authorization may appear only in a private review run; clear or remove it before final delivery.
+- Write a V2 Source Package once. Later stages consume its brief and cited
+  claims/assets/toolchain, reopening raw snapshots only for conflicts or missing
+  evidence.
 
 ## Script shape
 
@@ -31,6 +34,8 @@
 - Avoid abstract AI hype, boundary lectures, and generic endings. Never use slogans such as “AI is changing everything,” “the future has arrived,” or “ordinary people must seize the opportunity.”
 - Do not create a separate disclaimer scene. Tighten an unsupported claim inside the sentence where it appears.
 - Create scene text and editorial captions together. Each caption must reconstruct the spoken scene exactly after punctuation and whitespace are ignored.
+- Bind every public scene to supported claim IDs and usable asset IDs. Keep
+  unverified claims out of public narration and rejected assets out of the edit.
 
 ## Source-led edit
 
@@ -51,14 +56,22 @@
 
 - Use ChatCut as the preferred assembly editor.
 - Load the installed ChatCut plugin's basics, asset-import, verification, and export Skills before editing. Import original source assets, preserve the editable timeline, and do not replace it with a locally concatenated or pre-flattened review file.
+- Write the semantic edit plan first. It carries source-frame ranges, scene
+  order, caption region, visual fit policy, and information-card hash; it does
+  not carry post-TTS timing.
 - Put source clips and the information card on visual tracks. Keep voice, BGM, and automatic captions out of the clean-base export.
 - Verify the composed timeline with ChatCut project state and representative rendered frames, then create the clean base through ChatCut's documented cloud or local-CLI export route as appropriate for the asset state.
 - Record scene boundaries in source timeline order. Use half-open ranges `[in, out)` and keep the order in the JSON array; never sort by scene ID.
 - Treat the clean base as the deterministic boundary. The Skill handles review gating, TTS, alignment, scene retiming, captions, music, render, and QA after this point.
+- After forced alignment, the Skill writes the integer-frame timeline lock that
+  binds the edit plan, clean base, Source Package, alignment, and final retime.
+  ChatCut does not consume this post-alignment lock.
 
 ## Publication package
 
 - Treat `review-runs/<build-key>/` as a private review artifact. TTS, rendering, and visual QA may proceed while material authorization is explicitly pending, but that directory is not upload-ready.
-- Deliver the final MP4, 3:4 cover, 4:3 cover, full and platform subtitle files, narration masters, QA reports, contact sheet, review evidence, and provenance manifest in one atomic `deliverables/<build-key>/` bundle only after material authorization is confirmed.
+- Deliver the final MP4, 3:4 cover, 4:3 cover, full and platform subtitle files, narration masters, QA reports, contact sheet, review evidence, and provenance manifest in one atomic `deliverables/<release-key>/` bundle only after material authorization is confirmed. Read the release key from `finalize`; it binds the build and exact rights ledger.
 - Keep source links and author credit outside the public video frame unless a specific reference is necessary and has been approved.
 - Apply the AI-generated-content label required by the chosen platform workflow.
+- Keep rights confirmation, revocation, and attribution placement in the private
+  append-only ledger. A later revocation invalidates an earlier confirmation.

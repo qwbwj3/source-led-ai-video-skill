@@ -11,16 +11,28 @@
 - Final decoded loudness is `-14 ±0.5 LUFS`; true peak is at most `-1.4 dBFS`.
 - Full decode succeeds. No undeclared full-black interval of at least 0.30 seconds and no undeclared silence of at least 0.80 seconds.
 - Both covers exist, use independent imagegen sources, have the exact dimensions, and include the hook in their filenames.
+- V2 Source Package, edit plan, completed cover prompt record, and post-alignment
+  timeline lock remain hash-bound to the run.
 
 ## Required visual review
 
-Open the contact sheet, both covers, and full-resolution frames at:
+Automatic QA writes real full-resolution JPEGs under
+`qa/evidence-frames/` and binds them in `qa/review-points.json` by video hash,
+frame number, timestamp, path, and file hash. Open the contact sheet, both covers,
+and every listed evidence frame. Required points include:
 
 - opening hook;
 - every scene boundary;
 - information-card entry, midpoint, and exit;
-- every two-line caption type;
+- the first representative two-line caption;
 - final frame.
+
+Listen to the complete rendered video. A passing `confirm-visual` record uses
+schema 3 and must declare an actual listened duration covering the video plus an
+`--evidence-frame SECONDS:LABEL` entry matching every required review point.
+Missing, changed, traversing, or unbound evidence files make the review stale.
+Schema-2 records remain readable for legacy diagnosis and cannot finalize a V2
+delivery.
 
 Reject:
 
@@ -31,9 +43,27 @@ Reject:
 - weak/misspelled cover hooks or two covers derived from the same generation;
 - speech that sounds clipped, rushed, emotionally wrong, or incorrectly pronounces a key tool name.
 
+For a failed `confirm-visual`, repeat `--failed-check` with one or more exact
+machine-readable values: `no_pixelated_upscale`, `no_caption_ui_overlap`,
+`no_caption_clipping`, `info_card_readable`,
+`no_visible_url_or_external_ui`, `covers_readable_and_hooked`, or
+`voice_and_bgm_acceptable`.
+
 ## Final delivery boundary
 
-`review-runs/<build-key>/` is for private review and is not upload-ready. Do not call the bundle complete until `confirm-visual` records a specific pass, the verified approval binds `rights_clearance: confirmed`, and `finalize` atomically publishes `deliverables/<build-key>/`. A pending rights state returns `RIGHTS_PENDING`; `verify` also treats it as a bundle failure. Record a visual fail when a check is blocked or incomplete; failed or stale QA cannot be finalized.
+`review-runs/<build-key>/` is immutable private-review evidence and remains in
+place after finalization. Do not call the bundle complete until schema-3 visual
+review passes, approval binds `rights_clearance: confirmed`, every required V2
+rights record is active, and `finalize` atomically publishes
+`deliverables/<release-key>/`. The release key binds the build and current
+rights ledger. Finalization builds in an unpredictable private staging
+directory, validates it, atomically publishes read-only files, verifies the
+published contracts again, quarantines a failed publication, and updates
+`latest.json` only after success. Failed or stale QA cannot finalize.
+
+If a rights-state change produces a different build run, complete a fresh
+schema-3 visual/audio review against that run's exact evidence before
+finalization, even when the video-core cache was reused.
 
 ## Reproducibility claim
 

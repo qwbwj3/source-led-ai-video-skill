@@ -1,0 +1,66 @@
+{
+  "manifest": {
+    "version": 1,
+    "source_type": "x",
+    "source_url": "https://example.invalid/replace-with-source-url",
+    "captured_at": "2026-01-01T00:00:00Z",
+    "analyzer_version": "source-analyzer-v1",
+    "schema_version": 1,
+    "revision": {},
+    "sources": [
+      {
+        "source_id": "source-original",
+        "kind": "x_post",
+        "url": "https://example.invalid/replace-with-source-url",
+        "captured_at": "2026-01-01T00:00:00Z",
+        "content_path": "source-package/raw/original-post.md",
+        "content_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+      }
+    ]
+  },
+  "claims": [
+    {
+      "claim_id": "claim-01",
+      "statement": "替换为原作者陈述或已核实事实。",
+      "classification": "author_statement",
+      "confidence": "medium",
+      "verified_at": "2026-01-01T00:00:00Z",
+      "evidence": [
+        {
+          "source_id": "source-original",
+          "locator": "替换为帖子正文、回复或文档中的精确位置"
+        }
+      ]
+    }
+  ],
+  "assets": {
+    "version": 1,
+    "items": [
+      {
+        "asset_id": "asset-01",
+        "kind": "video",
+        "source_id": "source-original",
+        "local_path": "source/demo.mp4",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "rights_status": "pending",
+        "frame_count": 1,
+        "width": 1080,
+        "height": 1920
+      }
+    ]
+  },
+  "toolchain": {
+    "version": 1,
+    "steps": [
+      {
+        "step_id": "step-01",
+        "tool": "替换为原文给出的工具",
+        "action": "替换为该工具在作品中的具体作用",
+        "claim_ids": [
+          "claim-01"
+        ]
+      }
+    ]
+  },
+  "brief": "替换为供后续 Agent 优先读取的简明项目说明，并保留结果、做法、受众价值与证据边界。"
+}

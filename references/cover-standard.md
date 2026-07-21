@@ -36,15 +36,31 @@ Include:
 - The video's material and color cues.
 - Constraints: exact hook only; no extra text, logos, watermarks, X/GitHub UI, URLs, account handles, QR codes, or unrelated objects.
 
-Make one built-in imagegen call per ratio. The built-in tool needs no OpenAI API key. If it is unavailable, stop and report `IMAGEGEN_UNAVAILABLE`; do not silently substitute HTML, SVG, or an unapproved paid CLI.
+Run `edit_plan.py sync-cover` after finalizing the hook, filenames, visual
+settings, and per-ratio text modes. Then make one built-in imagegen call per
+ratio. The built-in tool needs no OpenAI API key. If it is unavailable, stop and report `IMAGEGEN_UNAVAILABLE`; do not silently substitute HTML, SVG, or an unapproved paid CLI.
+
+After saving each generated source, use `edit_plan.py record-cover` to retain the
+full prompt, available provider metadata, generated time, generation version,
+result status, file path, and SHA-256. If the tool exposes no model, omit
+`--model` to record `builtin-imagegen`. If it exposes no result ID, omit
+`--result-id`; the writer stores a clearly labeled local attempt ID and leaves
+the provider ID null. Never fabricate provider metadata. Failed and completed
+attempts remain in the current semantic revision. `validate-cover` rejects
+pending records, shared current call identities, shared source hashes, stale
+files, and changed hook semantics.
 
 ## QA
 
 - Inspect both generated sources at full size. Confirm every Chinese character, line break, highlight, subject detail, and safe margin.
 - Inspect both at 25% feed-preview size. The conclusion, highlighted keyword, and subject must read immediately.
-- If direct ImageGen text is wrong, cropped, weak, or accompanied by extra text, make one targeted regeneration for that ratio and recheck. If the second result still fails, make one independent text-free clean master for that failed ratio, save it at a new source path, and set only `cover.<ratio>.text_mode` to `deterministic`. Require no text, letters, or numbers in this fallback prompt. Keep a passing ratio in `imagegen` mode. Never draw deterministic text over an ImageGen headline.
+- If direct ImageGen text is wrong, cropped, weak, or accompanied by extra text, make one targeted regeneration for that ratio and recheck. If the second result still fails, make one independent text-free clean master for that failed ratio, save it at a new source path, and set only `cover.<ratio>.text_mode` to `deterministic`. Run `sync-cover` after this configuration change; it archives and resets the failed ratio without invalidating the passing ratio. Require no text, letters, or numbers in this fallback prompt. Keep a passing ratio in `imagegen` mode. Never draw deterministic text over an ImageGen headline.
 - Verify the final dimensions with FFprobe.
 - Verify the hook is exact, readable, inside the safe area, and not covered by a high-detail subject.
 - Inspect a 25%-scale preview as well as the full-size files. At feed size, the result silhouette and the complete hook must remain immediately readable; reject layouts that look like a corporate poster, product catalogue, report cover, or subtitle strip.
 - Compare hashes: the two generated sources must differ.
 - Open both final covers at full size. Reject misspelled text, extra model-generated text, any person when `allow_people` is false, distorted objects, unrelated logos, weak contrast, or a hook disconnected from the video.
+- Run deterministic cover rendering after provenance is complete. It normalizes
+  `imagegen` outputs and performs overflow checks for deterministic fallback.
+  Text outside the safe area fails with `COVER_TEXT_OVERFLOW`; do not shrink it
+  blindly until it technically passes.

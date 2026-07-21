@@ -28,3 +28,19 @@ HyperFrames is optional. Use it for a readable toolchain card when available; a 
 - Source-media and music rights.
 
 After the listed Codex capabilities are present, Volcengine is the only credential file this Skill asks the user to configure. Do not describe the complete workflow as self-contained when Chrome, ChatCut, or imagegen is absent.
+
+## Operational state
+
+Each project keeps non-delivery state under `.source-led-ai-video/`:
+
+- `events.jsonl`: append-only stage start/finish/failure/cache events with
+  attempts, hashes, monotonic elapsed time, and error codes;
+- `video-cache/<video-key>/`: validated video-core cache entries; completed
+  review builds provide the release/cover reuse boundary;
+- `analytics/events.jsonl`: optional token, platform, and creator feedback;
+- lock files opened without following symlinks.
+
+`workflow.py status` is read-only and reports missing inputs, latest build
+elapsed time, visual state, rights state, and next action. `resume` safely reruns
+unfinished early work or reuses a valid completed build/passed video core. It
+does not claim generic checkpoint recovery for every internal stage.
