@@ -22,6 +22,7 @@ MODEL_REVISION = "0e1a68e91d815300c7c9754b2a7639378b23db15"
 LOCKED_ALIGNER_PYTHON_VERSION = "3.11.15"
 FIXED_MAX_DURATION_SECONDS = 90.0
 MAX_NARRATION_CHARACTERS = 480
+FIXED_NARRATION_CTA = "文稿我已经整理好，评论区自取"
 FIXED_FINAL_LUFS = -14.0
 FIXED_RETIME_RATIO_LIMITS = (0.8, 1.2)
 BGM_FADE_OUT_DEFAULT_SECONDS = 1.8
@@ -167,6 +168,7 @@ def narration_payload(config: dict[str, Any]) -> dict[str, Any]:
         "schema": int(config.get("version", 1)),
         "platform": config.get("platform", "douyin"),
         "language": config["narration"].get("language", "Chinese"),
+        "required_cta": config["narration"].get("required_cta"),
         "scenes": scenes,
     }
 
@@ -817,6 +819,18 @@ def load_and_validate_config(config_path: Path) -> tuple[dict[str, Any], Path]:
             "CONFIG_NARRATION_LENGTH",
             f"Narration exceeds the {MAX_NARRATION_CHARACTERS}-character paid-TTS preflight limit",
         )
+    if "required_cta" in narration:
+        required_cta = _text(narration["required_cta"], "narration.required_cta")
+        if required_cta != FIXED_NARRATION_CTA:
+            raise WorkflowError(
+                "CONFIG_REQUIRED_CTA",
+                "narration.required_cta must match the account fixed CTA exactly",
+            )
+        if normalize_text(required_cta) not in normalize_text(narration_text(config)):
+            raise WorkflowError(
+                "CONFIG_REQUIRED_CTA",
+                "Narration must include the account fixed CTA exactly",
+            )
 
     source_timeline = _mapping(config.get("source_timeline"), "source_timeline")
     boundaries = source_timeline.get("scene_boundaries_seconds")

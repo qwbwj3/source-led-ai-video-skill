@@ -171,6 +171,20 @@ class V2ContractFixture(unittest.TestCase):
 
 
 class ProjectV2Tests(V2ContractFixture):
+    def test_required_cta_is_enforced_when_configured(self) -> None:
+        self.config["narration"]["required_cta"] = common.FIXED_NARRATION_CTA
+        _write_json(self.config_path, self.config)
+        with self.assertRaises(common.WorkflowError) as raised:
+            common.load_and_validate_config(self.config_path)
+        self.assertEqual("CONFIG_REQUIRED_CTA", raised.exception.code)
+
+        self.config["narration"]["scenes"][0]["text"] += common.FIXED_NARRATION_CTA
+        self.config["narration"]["scenes"][0]["captions"] = [
+            self.config["narration"]["scenes"][0]["text"]
+        ]
+        _write_json(self.config_path, self.config)
+        common.load_and_validate_config(self.config_path)
+
     def test_v2_and_legacy_v1_are_both_accepted(self) -> None:
         config, _ = common.load_and_validate_config(self.config_path)
         self.assertEqual(2, config["version"])

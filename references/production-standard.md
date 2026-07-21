@@ -30,6 +30,7 @@
 - Run the bundled `yuwen-publish-precheck` lexical and semantic review on the exact final narration before any voice synthesis, including tests or retries. A script, hook, scope, commercial-flag, or scene-order change invalidates the approval.
 - Open with the concrete result, conflict, or tool workflow. Front-load the tool recommendation and the short “how it was made” chain.
 - Give the viewer one reason to save: a usable toolchain, prompt idea, workflow, or practical judgment.
+- Include the exact final CTA once in every narration and matching caption: “文稿我已经整理好，评论区自取”。Use the final save/share beat and count it toward the 480-character limit.
 - Use the author/source facts as evidence and add an original judgment. Do not translate the original post line by line.
 - Avoid abstract AI hype, boundary lectures, and generic endings. Never use slogans such as “AI is changing everything,” “the future has arrived,” or “ordinary people must seize the opportunity.”
 - Do not create a separate disclaimer scene. Tighten an unsupported claim inside the sentence where it appears.

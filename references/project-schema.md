@@ -19,6 +19,8 @@ regression fixtures, but new projects default to V2.
   only for an explicit no-music version or technical smoke test.
 - `narration.scenes`: ordered scene array. Preserve array order even if IDs look
   sortable.
+- New V2 projects set `narration.required_cta` to the account's fixed exact CTA.
+  The normalized full narration must include it once; it is part of the review-bound narration payload.
 - `source_timeline.scene_boundaries_seconds`: `scene count + 1` half-open
   boundaries beginning at `0` and ending at the clean-base duration.
 - `source_timeline.retime_ratio_limits`: fixed at `[0.8, 1.2]`.

@@ -8,7 +8,13 @@ import sys
 from pathlib import Path
 
 from edit_plan import initialize_cover_prompt
-from lib.common import SKILL_ROOT, WorkflowError, atomic_write_json, read_json
+from lib.common import (
+    FIXED_NARRATION_CTA,
+    SKILL_ROOT,
+    WorkflowError,
+    atomic_write_json,
+    read_json,
+)
 
 
 def _legacy_v1(template: dict) -> dict:
@@ -49,6 +55,8 @@ def main() -> int:
     template = read_json(SKILL_ROOT / "assets/project-template.json")
     if args.project_version == 1:
         template = _legacy_v1(template)
+    else:
+        template["narration"]["required_cta"] = FIXED_NARRATION_CTA
     template["project_name"] = args.name.strip()
     atomic_write_json(config_path, template)
     if args.project_version == 2:

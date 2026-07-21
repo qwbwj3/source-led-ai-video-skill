@@ -38,6 +38,7 @@ Before approving copy, read the bundled publish-precheck files listed in `refere
 - Public frame: remove X/GitHub UI, URLs, repository paths, handles, QR codes, and unrelated platform marks. Keep source identity and rights evidence in private records; put credit in the body or pinned comment when required.
 - Editor: use ChatCut for the editable source-led assembly. Use one HTML/HyperFrames information card when a project or workflow needs a compact explanation.
 - Voice: use the configured Volcengine knowledgeable female voice in one full-narration request at natural speed. Do not stretch speech.
+- Fixed CTA: every narration must include this exact spoken sentence once, with matching captions: “文稿我已经整理好，评论区自取”。Place it in the final save/share beat, and keep it inside the 480-character preflight limit.
 - Music: use supplied or otherwise rights-cleared BGM for a publishable version. An empty BGM path is limited to a smoke test or explicit no-music version.
 - Covers: make separate 3:4 and 4:3 ImageGen calls. Each final composition contains the exact reviewed Chinese hook. Cropping one generation into two sizes is blocked.
 - Publication: create files locally; do not upload automatically.
