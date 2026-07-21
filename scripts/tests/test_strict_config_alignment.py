@@ -354,6 +354,25 @@ class AssTextTests(unittest.TestCase):
         )
         self.assertGreater(short, long)
 
+    def test_overlong_single_line_cover_fails_instead_of_using_unsafe_minimum(self) -> None:
+        with self.assertRaises(common.WorkflowError) as raised:
+            render_cover.adaptive_font_size(
+                ("这个单行封面标题已经长到无法放进安全区域",),
+                available_width=890,
+                max_font_size=120,
+                min_font_size=76,
+            )
+        self.assertEqual("COVER_TEXT_OVERFLOW", raised.exception.code)
+
+    def test_cover_font_size_accepts_exact_minimum_fit(self) -> None:
+        font_size = render_cover.adaptive_font_size(
+            ("甲" * 10,),
+            available_width=830,
+            max_font_size=120,
+            min_font_size=76,
+        )
+        self.assertEqual(76, font_size)
+
     def test_cover_ass_uses_white_primary_and_orange_accent_styles(self) -> None:
         document = render_cover.build_ass_document(
             render_cover.LAYOUTS["3x4"],

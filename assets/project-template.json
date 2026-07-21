@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "project_name": "请替换项目名",
   "platform": "douyin",
   "commercial": true,
@@ -21,14 +21,30 @@
     "scenes": [
       {
         "id": "scene-01",
+        "purpose": "结果钩子",
         "text": "把第一段口播写在这里。",
+        "claim_ids": [
+          "claim-01"
+        ],
+        "asset_ids": [
+          "asset-01"
+        ],
+        "caption_region": "bottom",
         "captions": [
           "把第一段口播写在这里。"
         ]
       },
       {
         "id": "scene-02",
+        "purpose": "方法与判断",
         "text": "把第二段口播写在这里。",
+        "claim_ids": [
+          "claim-02"
+        ],
+        "asset_ids": [
+          "asset-01"
+        ],
+        "caption_region": "bottom",
         "captions": [
           {
             "text": "把第二段口播写在这里。",
@@ -49,6 +65,13 @@
       1.2
     ]
   },
+  "source_package": {
+    "manifest": "source-package/manifest.json"
+  },
+  "edit": {
+    "plan": "edit/edit-plan.json",
+    "timeline_lock": "edit/timeline.lock.json"
+  },
   "caption_style": {
     "font_size": 68,
     "margin_v": 470,
@@ -66,6 +89,7 @@
     ],
     "text_mode": "imagegen",
     "allow_people": false,
+    "prompt_record": "covers/cover-prompt.json",
     "visual_brief": "无真人封面。用具体结果做主视觉，让 ImageGen 把审核通过的钩子直接做成结论式大字、高光关键词和完整光影；不出现额外文字、外部平台标识、网址、水印或无关装饰。",
     "3x4": {
       "generated_source": "covers/source/cover-3x4-imagegen.png",

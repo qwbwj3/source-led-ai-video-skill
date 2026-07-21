@@ -111,6 +111,11 @@ REPORT_BOUNDARY_STATEMENT = (
     "边界声明：“可以发”仅表示本次检查范围内未发现阻断项，不承诺平台审核通过，"
     "也不替代事实、资质、版权和授权核验。"
 )
+LEXICAL_HIT_COLLECTIONS = (
+    "candidates",
+    "personal_hits",
+    "myth_advisories",
+)
 
 
 def policy_fingerprint() -> dict[str, str]:
@@ -203,6 +208,52 @@ def review_payload(config: dict) -> dict:
     return base | {"review_payload_sha256": sha256_bytes(canonical_json(base))}
 
 
+def _scan_review_content(
+    narration: str,
+    cover_hook: str,
+    *,
+    commercial: bool,
+    industries: set[str],
+) -> dict:
+    """Scan both reviewed text sources while preserving the legacy scan envelope.
+
+    ``text_sha256`` and ``characters`` continue to describe the narration so
+    existing consumers keep their original meaning. Cover-specific evidence is
+    additive, and every lexical hit identifies the source-local coordinates it
+    belongs to.
+    """
+    narration_scan = precheck_scan.scan(
+        narration,
+        commercial=commercial,
+        industries=industries,
+        radius=24,
+    )
+    cover_scan = precheck_scan.scan(
+        cover_hook,
+        commercial=commercial,
+        industries=industries,
+        radius=24,
+    )
+    result = dict(narration_scan)
+    result["scanned_sources"] = ["narration", "cover_hook"]
+    result["cover_hook_sha256"] = cover_scan["text_sha256"]
+    result["cover_hook_characters"] = cover_scan["characters"]
+    for collection in LEXICAL_HIT_COLLECTIONS:
+        result[collection] = [
+            {**hit, "source": source}
+            for source, source_scan in (
+                ("narration", narration_scan),
+                ("cover_hook", cover_scan),
+            )
+            for hit in source_scan[collection]
+        ]
+    result["note"] = (
+        "已分别扫描口播文案与封面钩子；词面命中只是复核候选，不是违规结论；"
+        "零命中也不代表语义安全。"
+    )
+    return result
+
+
 def _require_current_evidence(config: dict, project_root: Path) -> tuple[dict, dict, Path]:
     try:
         review_dir = managed_path(project_root, "review", must_exist=True, kind="dir")
@@ -239,11 +290,11 @@ def _require_current_evidence(config: dict, project_root: Path) -> tuple[dict, d
         raise WorkflowError("REVIEW_STALE", "Narration review hash is stale")
 
     scan = read_json(scan_path)
-    expected_scan = precheck_scan.scan(
+    expected_scan = _scan_review_content(
         actual_narration.decode("utf-8"),
+        current["cover_hook"],
         commercial=current["commercial"],
         industries=set(current["industries"]),
-        radius=24,
     )
     if scan != expected_scan:
         raise WorkflowError("REVIEW_SCAN_STALE", "Lexical scan does not match the exact review payload")
@@ -445,11 +496,11 @@ def scan(config_path: Path) -> dict:
         raise WorkflowError("REVIEW_MISSING", "Narration review input is unreadable") from exc
     if actual != exact:
         raise WorkflowError("REVIEW_STALE", "Run prepare before the lexical scan")
-    result = precheck_scan.scan(
+    result = _scan_review_content(
         actual,
+        normalize_text(config["cover"]["hook"]),
         commercial=bool(config.get("commercial", True)),
         industries=set(review_industries(config)),
-        radius=24,
     )
     managed_atomic_write_json(
         project_root,
@@ -597,7 +648,7 @@ def verify_packaged_approval(config_path: Path) -> dict:
     """Verify bundled review evidence without requiring original media inputs."""
     config_path = config_path.resolve()
     config = read_json(config_path)
-    if not isinstance(config, dict) or config.get("version") != 1:
+    if not isinstance(config, dict) or config.get("version") not in {1, 2}:
         raise WorkflowError("REVIEW_CONFIG", "Packaged project config is invalid")
     validate_scope_sentinel(config)
     return _verify_approval_for_config(config, config_path.parent)

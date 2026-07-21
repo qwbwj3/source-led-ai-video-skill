@@ -179,7 +179,12 @@ def adaptive_font_size(
     if widest <= 0:
         raise WorkflowError("COVER_WRAP", "Cover hook has no visible width")
     fitted = int((available_width * 0.92) / widest)
-    return min(max_font_size, max(min_font_size, fitted))
+    if fitted < min_font_size:
+        raise WorkflowError(
+            "COVER_TEXT_OVERFLOW",
+            "Cover headline cannot fit the safe area at the minimum font size",
+        )
+    return min(max_font_size, fitted)
 
 
 def build_ass_document(layout: CoverLayout, lines: tuple[str, ...], font_size: int) -> str:

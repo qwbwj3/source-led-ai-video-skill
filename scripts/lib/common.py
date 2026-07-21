@@ -22,6 +22,7 @@ MODEL_REVISION = "0e1a68e91d815300c7c9754b2a7639378b23db15"
 LOCKED_ALIGNER_PYTHON_VERSION = "3.11.15"
 FIXED_MAX_DURATION_SECONDS = 90.0
 MAX_NARRATION_CHARACTERS = 480
+FIXED_NARRATION_CTA = "文稿我已经整理好，评论区自取"
 FIXED_FINAL_LUFS = -14.0
 FIXED_RETIME_RATIO_LIMITS = (0.8, 1.2)
 BGM_FADE_OUT_DEFAULT_SECONDS = 1.8
@@ -148,17 +149,26 @@ def caption_objects(scene: dict[str, Any]) -> list[dict[str, Any]]:
 def narration_payload(config: dict[str, Any]) -> dict[str, Any]:
     scenes = []
     for scene in config["narration"]["scenes"]:
-        scenes.append(
-            {
-                "id": scene["id"],
-                "text": normalize_text(scene["text"]),
-                "captions": caption_objects(scene),
-            }
-        )
+        item = {
+            "id": scene["id"],
+            "text": normalize_text(scene["text"]),
+            "captions": caption_objects(scene),
+        }
+        if config.get("version") == 2:
+            item.update(
+                {
+                    "purpose": normalize_text(scene["purpose"]),
+                    "claim_ids": list(scene["claim_ids"]),
+                    "asset_ids": list(scene["asset_ids"]),
+                    "caption_region": scene["caption_region"],
+                }
+            )
+        scenes.append(item)
     return {
-        "schema": 1,
+        "schema": int(config.get("version", 1)),
         "platform": config.get("platform", "douyin"),
         "language": config["narration"].get("language", "Chinese"),
+        "required_cta": config["narration"].get("required_cta"),
         "scenes": scenes,
     }
 
@@ -694,12 +704,32 @@ def _text(value: Any, label: str, *, allow_empty: bool = False) -> str:
     return value
 
 
+def _id_list(value: Any, label: str, prefix: str) -> list[str]:
+    if type(value) is not list or not value:
+        raise WorkflowError("CONFIG_SCENE", f"{label} must be a non-empty list")
+    if any(type(item) is not str for item in value):
+        raise WorkflowError("CONFIG_SCENE", f"{label} entries must be strings")
+    expected = re.compile(rf"{re.escape(prefix)}-[a-z0-9][a-z0-9-]{{0,47}}")
+    if any(expected.fullmatch(item) is None for item in value):
+        raise WorkflowError(
+            "CONFIG_SCENE", f"{label} entries must use lowercase {prefix}- identifiers"
+        )
+    if len(value) != len(set(value)):
+        raise WorkflowError("CONFIG_SCENE", f"{label} entries must be unique")
+    return value
+
+
 def load_and_validate_config(config_path: Path) -> tuple[dict[str, Any], Path]:
     config_path = config_path.resolve()
     project_root = config_path.parent
     config = read_json(config_path)
-    if type(config) is not dict or type(config.get("version")) is not int or config.get("version") != 1:
-        raise WorkflowError("CONFIG_VERSION", "Expected project config version 1")
+    if (
+        type(config) is not dict
+        or type(config.get("version")) is not int
+        or config.get("version") not in {1, 2}
+    ):
+        raise WorkflowError("CONFIG_VERSION", "Expected project config version 1 or 2")
+    config_version = config["version"]
     project_name = _text(config.get("project_name"), "project_name", allow_empty=True)
     if not normalize_text(project_name):
         raise WorkflowError("CONFIG_NAME", "project_name is required")
@@ -756,6 +786,24 @@ def load_and_validate_config(config_path: Path) -> tuple[dict[str, Any], Path]:
         if scene_id in ids:
             raise WorkflowError("CONFIG_SCENE_ID", f"Duplicate scene id: {scene_id}")
         ids.add(scene_id)
+        if config_version == 2:
+            _text(scene.get("purpose"), f"narration.scenes[{index}].purpose")
+            _id_list(
+                scene.get("claim_ids"),
+                f"narration.scenes[{index}].claim_ids",
+                "claim",
+            )
+            _id_list(
+                scene.get("asset_ids"),
+                f"narration.scenes[{index}].asset_ids",
+                "asset",
+            )
+            caption_region = scene.get("caption_region")
+            if caption_region not in {"bottom", "top", "hidden"}:
+                raise WorkflowError(
+                    "CONFIG_SCENE",
+                    f"narration.scenes[{index}].caption_region must be bottom, top, or hidden",
+                )
         raw_scene_text = scene.get("text")
         if type(raw_scene_text) is not str:
             raise WorkflowError("CONFIG_SCENE_TEXT", f"Scene {scene_id} text must be a string")
@@ -771,6 +819,18 @@ def load_and_validate_config(config_path: Path) -> tuple[dict[str, Any], Path]:
             "CONFIG_NARRATION_LENGTH",
             f"Narration exceeds the {MAX_NARRATION_CHARACTERS}-character paid-TTS preflight limit",
         )
+    if "required_cta" in narration:
+        required_cta = _text(narration["required_cta"], "narration.required_cta")
+        if required_cta != FIXED_NARRATION_CTA:
+            raise WorkflowError(
+                "CONFIG_REQUIRED_CTA",
+                "narration.required_cta must match the account fixed CTA exactly",
+            )
+        if normalize_text(required_cta) not in normalize_text(narration_text(config)):
+            raise WorkflowError(
+                "CONFIG_REQUIRED_CTA",
+                "Narration must include the account fixed CTA exactly",
+            )
 
     source_timeline = _mapping(config.get("source_timeline"), "source_timeline")
     boundaries = source_timeline.get("scene_boundaries_seconds")
@@ -789,6 +849,33 @@ def load_and_validate_config(config_path: Path) -> tuple[dict[str, Any], Path]:
                 "CONFIG_TIMELINE",
                 "retime_ratio_limits is fixed at [0.8, 1.2]",
             )
+
+    if config_version == 2:
+        source_package = _mapping(config.get("source_package"), "source_package")
+        edit = _mapping(config.get("edit"), "edit")
+        artifact_paths = {
+            "source_package.manifest": (
+                source_package.get("manifest"),
+                "source-package/manifest.json",
+            ),
+            "edit.plan": (edit.get("plan"), "edit/edit-plan.json"),
+            "edit.timeline_lock": (
+                edit.get("timeline_lock"),
+                "edit/timeline.lock.json",
+            ),
+        }
+        resolved_artifacts: list[Path] = []
+        for label, (raw_path, expected_path) in artifact_paths.items():
+            value = _text(raw_path, label, allow_empty=True)
+            if value != expected_path:
+                raise WorkflowError(
+                    "CONFIG_PATH", f"{label} must be {expected_path}"
+                )
+            resolved_artifacts.append(project_path(project_root, value, must_exist=False))
+        if len({normalized_path_identity(path) for path in resolved_artifacts}) != len(
+            resolved_artifacts
+        ):
+            raise WorkflowError("CONFIG_PATH", "V2 artifact paths must be distinct")
 
     cover = _mapping(config.get("cover"), "cover")
     raw_hook = _text(cover.get("hook"), "cover.hook", allow_empty=True)
@@ -832,6 +919,23 @@ def load_and_validate_config(config_path: Path) -> tuple[dict[str, Any], Path]:
     allow_people = cover.get("allow_people", False)
     if type(allow_people) is not bool:
         raise WorkflowError("CONFIG_COVER", "cover.allow_people must be a boolean")
+    if config_version == 2:
+        prompt_record = _text(
+            cover.get("prompt_record"), "cover.prompt_record", allow_empty=True
+        )
+        if prompt_record != "covers/cover-prompt.json":
+            raise WorkflowError(
+                "CONFIG_COVER",
+                "cover.prompt_record must be covers/cover-prompt.json",
+            )
+        prompt_record_path = project_path(project_root, prompt_record, must_exist=False)
+        artifact_identities = {
+            normalized_path_identity(path) for path in resolved_artifacts
+        }
+        if normalized_path_identity(prompt_record_path) in artifact_identities:
+            raise WorkflowError(
+                "CONFIG_PATH", "cover.prompt_record must differ from other V2 artifacts"
+            )
     cover_paths: list[Path] = []
     for ratio in ("3x4", "4x3"):
         entry = _mapping(cover.get(ratio), f"cover.{ratio}")
@@ -865,7 +969,7 @@ def load_and_validate_config(config_path: Path) -> tuple[dict[str, Any], Path]:
 
     if "caption_style" in config:
         style = _mapping(config["caption_style"], "caption_style")
-        for field in ("font_size", "margin_v", "max_line_units"):
+        for field in ("font_size", "margin_v", "top_margin_v", "max_line_units"):
             if field in style:
                 _finite_number(style[field], f"caption_style.{field}")
     if "audio" in config:

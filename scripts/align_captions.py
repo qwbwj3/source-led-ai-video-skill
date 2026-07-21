@@ -227,6 +227,7 @@ def map_captions(
     caption_glyph_cursor = 0
     previous_end = 0
     for scene_index, scene in enumerate(config["narration"]["scenes"]):
+        caption_region = scene.get("caption_region", "bottom")
         for caption_index, display in enumerate(caption_objects(scene)):
             target = spoken_glyphs(display["text"])
             end_cursor = caption_glyph_cursor + len(target)
@@ -247,7 +248,8 @@ def map_captions(
                     "sceneIndex": scene_index,
                     "captionIndex": caption_index,
                     "text": display["text"],
-                    "show": display["show"],
+                    "show": display["show"] and caption_region != "hidden",
+                    "captionRegion": caption_region,
                     "startMs": start_ms,
                     "endMs": end_ms,
                 }
