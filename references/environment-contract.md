@@ -26,8 +26,10 @@ HyperFrames is optional. Use it for a readable toolchain card when available; a 
 - Built-in imagegen availability.
 - Volcengine credentials and provider availability.
 - Source-media and music rights.
+- Optional Feishu user OAuth state and target-document permissions for the
+  post-publication resource library.
 
-After the listed Codex capabilities are present, Volcengine is the only credential file this Skill asks the user to configure. Do not describe the complete workflow as self-contained when Chrome, ChatCut, or imagegen is absent.
+After the listed Codex capabilities are present, Volcengine is the only credential file this Skill asks the user to configure. The optional Feishu module uses user OAuth through `lark-cli`; it does not add a credential file to the project or repository. Do not describe the complete workflow as self-contained when Chrome, ChatCut, or imagegen is absent.
 
 ## Operational state
 
@@ -38,6 +40,8 @@ Each project keeps non-delivery state under `.source-led-ai-video/`:
 - `video-cache/<video-key>/`: validated video-core cache entries; completed
   review builds provide the release/cover reuse boundary;
 - `analytics/events.jsonl`: optional token, platform, and creator feedback;
+- `share-doc/events.jsonl` and `share-doc/entries/`: optional post-publication
+  inclusion decisions, deterministic public XML, and sync receipts;
 - lock files opened without following symlinks.
 
 `workflow.py status` is read-only and reports missing inputs, latest build

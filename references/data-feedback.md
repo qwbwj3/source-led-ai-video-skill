@@ -76,3 +76,7 @@ viral outlier:
 
 Turn a repeated finding into a candidate rule first. Promote it into the Skill
 only after the pattern survives several comparable projects and a human review.
+
+Platform data may inform the separate post-publication Feishu-library decision,
+but it never triggers inclusion or exclusion by itself. The user explicitly
+chooses `include` or `skip` for each published artifact; see `share-doc.md`.

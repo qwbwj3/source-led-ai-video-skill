@@ -1,0 +1,24 @@
+{
+  "title": "Text-to-CAD：用文字生成可编辑 CAD",
+  "one_line_takeaway": "把尺寸、结构和运动方式描述清楚，就能生成建模代码和可继续修改的工程文件。",
+  "overview": "用两三段话说明项目做什么、普通人为什么值得收藏，以及实际使用前必须知道的一条限制。",
+  "toolchain": [
+    "写清尺寸、结构、连接关系和运动方式",
+    "由 AI 生成 build123d Python 建模代码",
+    "生成 STEP 文件并检查几何与尺寸",
+    "按用途继续导出机器人或 3D 打印文件"
+  ],
+  "repository_url": "https://github.com/example/project",
+  "source_url": "https://example.com/original-demo",
+  "resources": [
+    {
+      "label": "在线演示",
+      "url": "https://example.com/demo",
+      "note": "无需安装即可查看主要效果"
+    },
+    {
+      "label": "官方文档",
+      "url": "https://example.com/docs"
+    }
+  ]
+}

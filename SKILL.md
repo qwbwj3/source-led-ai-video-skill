@@ -1,6 +1,6 @@
 ---
 name: source-led-ai-video
-description: Produce a source-led Chinese AI short video for Douyin from an X post, Builder demo, GitHub/open-source project, or prepared source folder. Use for source evidence packaging, a sub-90-second creator script, ChatCut assembly, mandatory yuwen publish precheck before Volcengine TTS, forced-aligned captions, BGM, two independent ImageGen covers with Chinese hooks, rights evidence, QA, analytics, and a ready-to-upload local bundle.
+description: Produce a source-led Chinese AI short video for Douyin from an X post, Builder demo, GitHub/open-source project, or prepared source folder. Use for source evidence packaging, a sub-90-second creator script, ChatCut assembly, mandatory yuwen publish precheck before Volcengine TTS, forced-aligned captions, BGM, two independent ImageGen covers with Chinese hooks, rights evidence, QA, analytics, a ready-to-upload local bundle, and an optional post-publication Feishu resource entry after an explicit include decision.
 ---
 
 # Source-led AI video
@@ -22,7 +22,7 @@ Always read:
 - `references/rights-ledger.md`
 - `references/operations.md`
 
-Read `references/environment-contract.md` on a new Mac. Read `references/data-feedback.md` when recording cost, platform data, or creator feedback.
+Read `references/environment-contract.md` on a new Mac. Read `references/data-feedback.md` when recording cost, platform data, or creator feedback. Read `references/share-doc.md` only after publication when the user is deciding whether that exact video should enter the fan-facing Feishu resource library.
 Read `references/migration-v1-v2.md` before upgrading an existing project; do
 not flip a V1 version field in place.
 
@@ -41,6 +41,7 @@ Before approving copy, read the bundled publish-precheck files listed in `refere
 - Music: use supplied or otherwise rights-cleared BGM for a publishable version. An empty BGM path is limited to a smoke test or explicit no-music version.
 - Covers: make separate 3:4 and 4:3 ImageGen calls. Each final composition contains the exact reviewed Chinese hook. Cropping one generation into two sizes is blocked.
 - Publication: create files locally; do not upload automatically.
+- Resource library: after publication, record a separate explicit `include` or `skip` decision. Never let upload success, moderation, or traffic trigger a Feishu write automatically.
 
 ## 1. Initialize a V2 project
 
@@ -326,6 +327,29 @@ verified `deliverables/<release-key>/` directory is upload-ready. Report the vid
 Use `scripts/analytics.py` for model usage, 2h/24h/72h/7d platform snapshots, and short creator feedback. Missing metrics stay `null`. Analytics files never enter the video Build Key. Do not put URLs, handles, phone numbers, email addresses, account IDs, or secrets in analytics text. See `references/data-feedback.md`.
 
 For low-cost operation, use one focused project per task and let a Terra High single Agent read the compact Source Package and structured intermediates. Use a stronger model only for a disputed source interpretation, script judgment, or failed QA diagnosis. Measure real tokens and elapsed time before setting a production target; do not claim a fixed token count or 10–20 minute finish without recorded runs.
+
+## 12. Optionally add the published video to the Feishu resource library
+
+This stage is independent from production and upload. Run it only after the user
+has explicitly chosen `include` or `skip` for the exact published video. Read
+`references/share-doc.md` before acting.
+
+For `include`, prepare a concise project-relative JSON from
+`assets/share-doc-entry.example.json`. It must contain a concrete one-line
+takeaway, a 3–5 step toolchain, useful project links, and only source-supported
+prompt material. Prompt provenance is mandatory; omit the entire prompt section
+when no defensible prompt is available.
+
+Record the decision with `scripts/share_doc.py`. The script writes only local,
+append-only state and deterministic Feishu XML. It does not call Feishu. Use the
+`lark-doc` Skill separately to search the visible material ID, insert the entry
+under its unique category heading, and verify exactly one matching entry after
+the write. Only then record `mark-synced`.
+
+A skipped item causes no Feishu operation. Share-document state never changes a
+Build Key, release, media cache, analytics event, or delivery bundle. Keep a new
+master document private until the user separately approves public-link
+permissions and anonymous access has been tested.
 
 ## Stop conditions
 

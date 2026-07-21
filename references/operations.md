@@ -93,3 +93,16 @@ extraction, rights state, manifests, and mechanical QA. Agents own source
 judgment, script, shot choice, ChatCut decisions, ImageGen prompt/inspection,
 semantic publish review, and full visual/audio review. Do not automate those
 judgment points into unchecked pass markers.
+
+## Optional post-publication resource entry
+
+The Feishu resource-library module has a separate operational boundary. It is
+never invoked by `run`, `resume`, `finalize`, or upload. After publication, a
+human may use platform outcome and creator judgment to choose `include` or
+`skip`; no metric threshold makes that choice automatically.
+
+Local state lives under `.source-led-ai-video/share-doc/`. It contains an
+append-only decision/sync log and deterministic public-entry XML. These files
+do not enter video, cover, build, or release identity and are never copied into
+review or delivery bundles. See `share-doc.md` for the remote duplicate and
+conflict checks required before recording a Feishu sync receipt.
