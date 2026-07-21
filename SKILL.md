@@ -174,7 +174,18 @@ python3 "$VIDEO_SKILL_ROOT/scripts/review_gate.py" approve \
 
 Use `--result revised-pass` after a repaired draft. The report may mark material rights pending for a private review run. Final delivery requires confirmed rights.
 
-## 7. Generate and record both covers
+## 7. Render the video core immediately after copy approval
+
+Once copy review passes, run the video core without waiting for either cover. It produces the narrated, captioned video and automatic QA for visual review; it does not authorize release.
+
+```bash
+python3 "$VIDEO_SKILL_ROOT/scripts/workflow.py" run \
+  --config "/absolute/path/to/project/project.json"
+```
+
+If the core build fails, stop and fix the named blocker. Do not ask the user to approve routine TTS, assembly, or render steps after copy review has passed.
+
+## 8. Generate and record both covers after the core render
 
 Use the built-in ImageGen capability twice: one complete 3:4 composition and one complete 4:3 composition. Copy the exact reviewed hook and line breaks into both prompts. Follow `references/cover-standard.md`; this account defaults to a faceless cover with large conclusion-led Chinese type and one highlighted keyword.
 
@@ -222,7 +233,7 @@ python3 "$VIDEO_SKILL_ROOT/scripts/render_cover.py" \
   --config "/absolute/path/to/project/project.json" --ratio 4x3
 ```
 
-## 8. Run, inspect status, and resume safely
+## 9. Attach covers, inspect status, and resume safely
 
 ```bash
 python3 "$VIDEO_SKILL_ROOT/scripts/workflow.py" status \
@@ -232,7 +243,7 @@ python3 "$VIDEO_SKILL_ROOT/scripts/workflow.py" run \
   --config "/absolute/path/to/project/project.json"
 ```
 
-The workflow validates V2 contracts before loading TTS credentials. It synthesizes one narration, force-aligns it, creates the final integer-frame timeline lock, retimes the clean base, burns captions by scene region, mixes BGM, renders the video, and produces automatic QA plus full-resolution evidence frames.
+The first run validates V2 source/edit contracts before loading TTS credentials. It synthesizes one narration, force-aligns it, creates the final integer-frame timeline lock, retimes the clean base, burns captions by scene region, mixes BGM, renders the video, and produces automatic QA plus full-resolution evidence frames. After both covers are recorded and normalized, run it again to attach them; the valid video core is reused.
 
 After failure, inspect `status` and use:
 
@@ -245,7 +256,7 @@ Recovery has two dependable boundaries: a valid completed build can be reused in
 
 `--reuse-tts` is limited to regression replay or an explicitly approved in-project recording and requires matching provenance. It never bypasses copy review.
 
-## 9. Complete evidence-based visual and audio QA
+## 10. Complete evidence-based visual and audio QA
 
 Open both final covers, the contact sheet, and every frame listed in `qa/review-points.json`. The generated points include opening, scene boundaries, ending, the first two-line caption, and each information-card entry/midpoint/exit. Listen to the full rendered video with BGM.
 
@@ -354,7 +365,7 @@ permissions and anonymous access has been tested.
 
 ## Stop conditions
 
-Stop before TTS when copy approval is missing or stale, either cover call/provenance is incomplete, source evidence cannot support a public claim, the clean base violates the media contract, captions do not reconstruct narration, or planned retime falls outside limits.
+Stop before TTS when copy approval is missing or stale, source evidence cannot support a public claim, the clean base violates the media contract, captions do not reconstruct narration, or planned retime falls outside limits. Missing covers do not block the video core; they block final visual approval and release.
 
 Pending material rights permit a private review run. Stop before finalization when required rights, full listening, evidence-frame coverage, automatic QA, or visual QA remain incomplete. Fix the source, script, edit, cover, voice, or rights record; do not weaken the gate.
 

@@ -123,8 +123,6 @@ REQUIRED_BUILD_ARTIFACTS = (
     "qa/auto-qa.md",
     "qa/contact-sheet.jpg",
     "qa/review-points.json",
-    "covers/cover-3x4.png",
-    "covers/cover-4x3.png",
     "project.json",
     "review/review-input.json",
     "review/narration.txt",
@@ -213,15 +211,15 @@ def config_sha256(config: dict[str, Any]) -> str:
 
 
 def validate_v2_contracts(
-    config_path: Path, config: dict[str, Any]
+    config_path: Path, config: dict[str, Any], *, require_completed_cover: bool = True
 ) -> dict[str, Any] | None:
-    """Validate the evidence/edit/cover inputs that must exist before TTS."""
+    """Validate source/edit contracts; completed covers are release-only inputs."""
     if config.get("version") != 2:
         return None
     project_root = config_path.resolve().parent
     package = validate_source_package(config_path)
     plan = validate_edit_plan(config_path)
-    prompt = validate_cover_prompt(config_path, require_completed=True)
+    prompt = validate_cover_prompt(config_path, require_completed=require_completed_cover)
     package_dir = project_path(
         project_root, config["source_package"]["manifest"], must_exist=True
     ).parent
@@ -639,8 +637,12 @@ def copy_review_evidence(
     managed_copy_file(project_root, report, destination)
 
 
-def required_build_artifacts(config: dict[str, Any]) -> tuple[str, ...]:
+def required_build_artifacts(
+    config: dict[str, Any], *, include_covers: bool = True
+) -> tuple[str, ...]:
     required = list(REQUIRED_BUILD_ARTIFACTS)
+    if include_covers:
+        required.extend(("covers/cover-3x4.png", "covers/cover-4x3.png"))
     if config.get("version") == 2:
         required.extend(
             (
@@ -662,9 +664,11 @@ def write_build_manifest(
     config: dict[str, Any],
     build_key: str,
     implementation: dict[str, Any],
+    *,
+    include_covers: bool = True,
 ) -> dict[str, Any]:
     stage, project_root = _checked_tree(stage)
-    for relative in required_build_artifacts(config):
+    for relative in required_build_artifacts(config, include_covers=include_covers):
         artifact = stage / relative
         if project_root is not None:
             try:
@@ -747,6 +751,7 @@ def verify_build_integrity(
     run_dir: Path,
     *,
     require_current_implementation: bool = True,
+    require_covers: bool = False,
 ) -> dict[str, Any]:
     config, project_root = load_and_validate_config(config_path)
     current_approval = verify_approval(config_path)
@@ -773,7 +778,15 @@ def verify_build_integrity(
         raise WorkflowError("BUILD_STALE", "Project config changed after this run")
     if require_current_implementation and manifest.get("implementation") != implementation_fingerprint():
         raise WorkflowError("BUILD_STALE", "Pipeline implementation changed after this run")
-    for relative in required_build_artifacts(config):
+    cover_artifacts = {"covers/cover-3x4.png", "covers/cover-4x3.png"}
+    recorded_covers = cover_artifacts & set(manifest["artifacts"])
+    if recorded_covers and recorded_covers != cover_artifacts:
+        raise WorkflowError("BUILD_ARTIFACT", "Build has an incomplete cover set")
+    if require_covers and recorded_covers != cover_artifacts:
+        raise WorkflowError("BUILD_COVERS", "Release requires both completed covers")
+    for relative in required_build_artifacts(
+        config, include_covers=recorded_covers == cover_artifacts
+    ):
         if relative not in manifest["artifacts"]:
             raise WorkflowError("BUILD_ARTIFACT", f"Manifest lacks required artifact: {relative}")
     if manifest["artifacts"].get("review/approval.json") != sha256_file(
@@ -798,7 +811,9 @@ def verify_build_integrity(
     ):
         raise WorkflowError("PROVENANCE_STALE", "Run provenance does not match the project")
     if config.get("version") == 2:
-        contracts = validate_v2_contracts(config_path, config)
+        contracts = validate_v2_contracts(
+            config_path, config, require_completed_cover=recorded_covers == cover_artifacts
+        )
         if contracts is None:
             raise WorkflowError("CONTRACT_STALE", "V2 contracts are unavailable")
         lock = validate_timeline_lock(config_path)
@@ -1746,13 +1761,21 @@ def run_build(args: argparse.Namespace) -> dict[str, Any]:
     config_path = args.config.resolve()
     config, project_root = load_and_validate_config(config_path)
     approval = verify_approval(config_path)
-    contracts = validate_v2_contracts(config_path, config)
+    contracts = validate_v2_contracts(
+        config_path, config, require_completed_cover=False
+    )
     ffmpeg, ffprobe = resolve_media_tools(args.ffmpeg, args.ffprobe)
     aligner = resolve_aligner_python(args.aligner_python)
     aligner_runtime = aligner_runtime_fingerprint(aligner)
     base = project_path(project_root, config["paths"]["base_video"], must_exist=True)
     validate_base(ffprobe, base, config)
-    cover_records = validate_cover_files(ffprobe, config, project_root)
+    try:
+        cover_records = validate_cover_files(ffprobe, config, project_root)
+    except WorkflowError as exc:
+        if exc.code in {"PATH_MISSING", "COVER_FILE", "COVER_PROMPT", "COVER_PROMPT_STALE"}:
+            cover_records = []
+        else:
+            raise
     bgm = None
     if config["paths"].get("bgm"):
         bgm = project_path(project_root, config["paths"]["bgm"], must_exist=True)
@@ -2151,20 +2174,21 @@ def run_build(args: argparse.Namespace) -> dict[str, Any]:
             if cached_video is None:
                 telemetry.finish("video_render", {"video.mp4": sha256_file(final)})
 
-            telemetry.start("covers", {"cover_key": cover_key})
-            covers_dir = ensure_managed_dir(project_root, stage / "covers")
-            for item in cover_records:
-                destination = covers_dir / f"cover-{item['ratio']}.png"
-                managed_copy_file(project_root, item["final"], destination)
-                if sha256_file(destination) != item["final_sha256"]:
-                    raise WorkflowError("COVER_COPY", f"{item['ratio']} cover copy changed")
-            telemetry.finish(
-                "covers",
-                {
-                    "cover-3x4": sha256_file(covers_dir / "cover-3x4.png"),
-                    "cover-4x3": sha256_file(covers_dir / "cover-4x3.png"),
-                },
-            )
+            if cover_records:
+                telemetry.start("covers", {"cover_key": cover_key})
+                covers_dir = ensure_managed_dir(project_root, stage / "covers")
+                for item in cover_records:
+                    destination = covers_dir / f"cover-{item['ratio']}.png"
+                    managed_copy_file(project_root, item["final"], destination)
+                    if sha256_file(destination) != item["final_sha256"]:
+                        raise WorkflowError("COVER_COPY", f"{item['ratio']} cover copy changed")
+                telemetry.finish(
+                    "covers",
+                    {
+                        "cover-3x4": sha256_file(covers_dir / "cover-3x4.png"),
+                        "cover-4x3": sha256_file(covers_dir / "cover-4x3.png"),
+                    },
+                )
             assert_managed_tree(project_root, stage)
             provenance = {
                 "schema": 1,
@@ -2241,7 +2265,9 @@ def run_build(args: argparse.Namespace) -> dict[str, Any]:
                 telemetry.finish("video_cache_publish", published_cache)
             copy_review_evidence(stage, config, project_root, approval)
             if contracts is not None:
-                current_contracts = validate_v2_contracts(config_path, config)
+                current_contracts = validate_v2_contracts(
+                    config_path, config, require_completed_cover=bool(cover_records)
+                )
                 if current_contracts is None or any(
                     current_contracts[key] != contracts[key]
                     for key in ("source_package", "edit_plan", "cover_prompt")
@@ -2268,7 +2294,9 @@ def run_build(args: argparse.Namespace) -> dict[str, Any]:
                 )
             ) != approval:
                 raise WorkflowError("REVIEW_STALE", "Review approval changed during the build")
-            write_build_manifest(stage, config, build_key, implementation)
+            write_build_manifest(
+                stage, config, build_key, implementation, include_covers=bool(cover_records)
+            )
             replace_managed_dir(project_root, stage, published_review)
             outputs = {
                 "build_manifest": sha256_file(published_review / "build-manifest.json"),
@@ -2322,7 +2350,9 @@ def confirm_visual(
         must_exist=True,
         kind="dir",
     )
-    integrity = verify_build_integrity(config_path.resolve(), run_dir)
+    integrity = verify_build_integrity(
+        config_path.resolve(), run_dir, require_covers=True
+    )
     if type(reviewer) is not str:
         raise WorkflowError("VISUAL_REVIEWER", "Visual reviewer must be text")
     if type(notes) is not str:
@@ -2910,7 +2940,9 @@ def _finalize_locked(
     project_root: Path,
     run_dir: Path,
 ) -> dict[str, Any]:
-    integrity = verify_build_integrity(config_path.resolve(), run_dir)
+    integrity = verify_build_integrity(
+        config_path.resolve(), run_dir, require_covers=True
+    )
     require_confirmed_rights(integrity["approval"])
     visual = verify_visual_record(
         run_dir, integrity["manifest"], require_schema3=True
